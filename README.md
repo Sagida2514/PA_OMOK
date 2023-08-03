@@ -8,6 +8,6 @@ Unity가 지원하는 UDP 기반 Low Level API로
 
 구현사항
 - 오목 (금수 없음)
-- Unity Transport를 통한 서버 및 클라이언트 구현
+- Unity Transport를 활용한 서버 및 클라이언트 구현
 
 제작기간 : 1일
