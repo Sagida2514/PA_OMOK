@@ -1,3 +1,4 @@
+using Unity.Networking.Transport;
 using UnityEngine;
 
 public class OmokBoard : MonoBehaviour
@@ -5,9 +6,10 @@ public class OmokBoard : MonoBehaviour
     private const int boardSizeX = 19;
     private const int boardSizeY = 19;
     private const int stoneSpacing = 4;
-    private int myTurn = 0;
+    private int myTeam = 0;
     private int currentTurn = 0;
     private bool gameOver = false;
+    private int playerCount = -1;
     private Camera currentCamera;
 
     private int[,] boardState = new int[boardSizeX, boardSizeY];
@@ -15,8 +17,9 @@ public class OmokBoard : MonoBehaviour
 
     private void Start()
     {
+        gameOver = true;
         currentCamera = Camera.main;
-
+        playerCount = -1;
         for (int i = 0; i < boardSizeX; i++)
         {
             for (int j = 0; j < boardSizeY; j++)
@@ -24,6 +27,8 @@ public class OmokBoard : MonoBehaviour
                 boardState[i, j] = -1;
             }
         }
+
+        RegisterEvents();
     }
 
     private void Update()
@@ -33,11 +38,11 @@ public class OmokBoard : MonoBehaviour
             return;
         }
 
-        if (currentTurn != myTurn)
+        if (currentTurn != myTeam)
         {
-            if (posIndicator[myTurn].activeSelf == true)
+            if (posIndicator[myTeam].activeSelf == true)
             {
-                posIndicator[myTurn].SetActive(false);
+                posIndicator[myTeam].SetActive(false);
             }
 
             return;
@@ -57,20 +62,25 @@ public class OmokBoard : MonoBehaviour
 
         if (boardState[bPos.x, bPos.y] == -1)
         {
-            posIndicator[myTurn].SetActive(true);
+            posIndicator[currentTurn].SetActive(true);
             var wPos = BoardPosToWorld(bPos.x, bPos.y);
-            posIndicator[myTurn].transform.position = new Vector2(wPos.x, wPos.y
+            posIndicator[currentTurn].transform.position = new Vector2(wPos.x, wPos.y
             );
 
 
             if (Input.GetMouseButtonDown(0) == true)
             {
-                SpawnStone(myTurn, bPos.x, bPos.y);
+                NetSpawnStone ms = new NetSpawnStone();
+                ms.posX = bPos.x;
+                ms.posY = bPos.y;
+                ms.teamId = currentTurn;
+                Client.Instance.SendToServer(ms);
+                SpawnStone(currentTurn, bPos.x, bPos.y);
             }
         }
         else
         {
-            posIndicator[myTurn].SetActive(false);
+            posIndicator[currentTurn].SetActive(false);
         }
     }
 
@@ -94,7 +104,7 @@ public class OmokBoard : MonoBehaviour
         }
 
         currentTurn = (currentTurn + 1) % 2;
-        myTurn = currentTurn;
+        // = currentTurn;
     }
 
     // 월드에서의 위치 -> 보드판에서의 위치
@@ -186,5 +196,75 @@ public class OmokBoard : MonoBehaviour
 
         // 6목이상은 허용안함. 정확히 5목인 경우에 return
         return cnt == 5;
+    }
+
+
+    private void RegisterEvents()
+    {
+        NetUtility.S_WELCOME += OnWelcomeServer;
+        NetUtility.S_SPAWN_STONE += OnSpawnStoneServer;
+        //NetUtility.S_REMATCH += OnRematchServer;
+
+        NetUtility.C_WELCOME += OnWelcomeClient;
+        NetUtility.C_START_GAME += OnStartGameClient;
+        NetUtility.C_SPAWN_STONE += OnSpawnStoneClient;
+        //NetUtility.C_REMATCH += OnRematchClient;
+    }
+
+    // 서버
+    private void OnWelcomeServer(NetMessage msg, NetworkConnection cnn)
+    {
+        // 클라이언트가 연결 됐을때, 클라이언트에게 흑인지 백인지 할당합니다.
+        NetWelcome nw = msg as NetWelcome;
+
+        // 팀 할당하기
+        nw.AssignedTeam = ++playerCount;
+
+        // 클라이언트에게 메시지 보내기
+        Server.Instance.SendToClient(cnn, nw);
+
+        // 팀 2개가 할당됐으면 게임 시작
+        if (playerCount == 1)
+        {
+            Server.Instance.Broadcast(new NetStartGame());
+        }
+    }
+
+
+    private void OnSpawnStoneServer(NetMessage msg, NetworkConnection cnn)
+    {
+        NetSpawnStone ms = msg as NetSpawnStone;
+
+        Server.Instance.Broadcast(ms);
+    }
+
+
+    // 클라이언트
+    private void OnWelcomeClient(NetMessage msg)
+    {
+        NetWelcome nw = msg as NetWelcome;
+
+        myTeam = nw.AssignedTeam;
+
+        Debug.Log($"할당된 팀은 {myTeam}");
+    }
+
+
+    private void OnStartGameClient(NetMessage msg)
+    {
+        transform.position = Vector3.zero;
+        gameOver = false;
+    }
+
+
+    private void OnSpawnStoneClient(NetMessage msg)
+    {
+        NetSpawnStone ms = msg as NetSpawnStone;
+        if (ms.teamId != myTeam)
+        {
+            Debug.Log($"돌 생성 : {ms.teamId} : {ms.posX} {ms.posX}");
+
+            SpawnStone(ms.teamId, ms.posX, ms.posY);
+        }
     }
 }
